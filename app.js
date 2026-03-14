@@ -341,6 +341,8 @@ const defaultState = {
   currentClueId: "",
   buzzedPlayerId: "",
   answerRevealed: false,
+  clueOpenedAt: 0,
+  scoringLocked: false,
   feed: [],
   live: {
     enabled: false,
@@ -420,6 +422,8 @@ function buildBoard(state) {
   state.currentClueId = "";
   state.buzzedPlayerId = "";
   state.answerRevealed = false;
+  state.clueOpenedAt = 0;
+  state.scoringLocked = false;
   pushFeed(state, `New board created with ${state.selectedCategoryNames.join(", ")}.`);
 }
 function remainingCount(state) {
@@ -1059,6 +1063,8 @@ function initGamePage() {
       currentClueId: state.currentClueId,
       buzzedPlayerId: state.buzzedPlayerId,
       answerRevealed: state.answerRevealed,
+      clueOpenedAt: state.clueOpenedAt,
+      scoringLocked: state.scoringLocked,
       feed: state.feed
     });
     if (serialized === state.live.lastSerializedState) {
@@ -1142,6 +1148,9 @@ function initGamePage() {
       }
       button.innerHTML = `<strong>${player.name}</strong><br><span>Press ${player.buzzKey} or click to buzz</span>`;
       button.addEventListener("click", () => {
+        if (state.scoringLocked || state.answerRevealed) {
+          return;
+        }
         state.buzzedPlayerId = player.id;
         buzzStatus.textContent = `${player.name} buzzed in first.`;
         markCorrectButton.disabled = false;
@@ -1170,7 +1179,15 @@ function initGamePage() {
     dialogAnswer.hidden = !state.answerRevealed;
     dialogAnswer.textContent = state.answerRevealed ? `Answer: ${clue.answer}` : "";
     const buzzedPlayer = state.players.find((player) => player.id === state.buzzedPlayerId);
-    if (buzzedPlayer) {
+    if (state.scoringLocked) {
+      buzzStatus.textContent = "Answer was revealed early. No points can be awarded for this clue.";
+      markCorrectButton.disabled = true;
+      markIncorrectButton.disabled = true;
+    } else if (state.answerRevealed && !buzzedPlayer) {
+      buzzStatus.textContent = "Answer is revealed. Rotate turn to continue.";
+      markCorrectButton.disabled = true;
+      markIncorrectButton.disabled = true;
+    } else if (buzzedPlayer) {
       buzzStatus.textContent = `${buzzedPlayer.name} buzzed in first.`;
       markCorrectButton.disabled = false;
       markIncorrectButton.disabled = false;
@@ -1200,6 +1217,8 @@ function initGamePage() {
     state.currentClueId = clue.id;
     state.buzzedPlayerId = "";
     state.answerRevealed = false;
+    state.scoringLocked = false;
+    state.clueOpenedAt = Date.now();
     setHostLine(`${clue.category} for $${clue.value}. ${activePlayer().name}, you control the board.`);
     saveAndRender(true, previousClueId);
   }
@@ -1208,12 +1227,14 @@ function initGamePage() {
     state.currentClueId = "";
     state.buzzedPlayerId = "";
     state.answerRevealed = false;
+    state.clueOpenedAt = 0;
+    state.scoringLocked = false;
     stopClueTimer();
   }
 
   function scoreClue(correct) {
     const clue = getCurrentClue(state);
-    if (!clue || !state.buzzedPlayerId) {
+    if (!clue || !state.buzzedPlayerId || state.scoringLocked) {
       return;
     }
     const player = state.players.find((item) => item.id === state.buzzedPlayerId);
@@ -1246,7 +1267,7 @@ function initGamePage() {
 
   function startClueTimer() {
     stopClueTimer();
-    const startedAt = Date.now();
+    const startedAt = state.clueOpenedAt || Date.now();
     timerFill.style.transform = "scaleX(1)";
     clueTimerId = window.setInterval(() => {
       const ratio = Math.max(0, 1 - (Date.now() - startedAt) / CLUE_TIMER_MS);
@@ -1347,7 +1368,14 @@ function initGamePage() {
   document.querySelector("#revealAnswer").addEventListener("click", () => {
     const clue = getCurrentClue(state);
     if (!clue) return;
+    const revealedEarly = Boolean(state.clueOpenedAt) && (Date.now() - state.clueOpenedAt) < CLUE_TIMER_MS;
     state.answerRevealed = true;
+    if (revealedEarly) {
+      state.scoringLocked = true;
+      state.buzzedPlayerId = "";
+      pushFeed(state, "Answer revealed early. Clue locked at zero points.");
+      setHostLine("Answer was revealed before time expired. This clue is now zero points.");
+    }
     saveAndRender();
   });
   document.querySelector("#markCorrect").addEventListener("click", () => scoreClue(true));
@@ -1359,6 +1387,7 @@ function initGamePage() {
   }
   window.addEventListener("keydown", (event) => {
     if (!clueDialog.open || !state.currentClueId) return;
+    if (state.scoringLocked || state.answerRevealed) return;
     const player = state.players.find((item) => item.buzzKey === event.key);
     if (player) {
       state.buzzedPlayerId = player.id;
