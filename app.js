@@ -320,6 +320,7 @@ const PLAYER_COLORS = ["#ffcb52", "#4ce0b3", "#ff6fb5", "#4da0ff"];
 const CLUE_TIMER_MS = 18000;
 const POLL_MS = 1500;
 const API_BASE = (window.JEOPARTY_CONFIG?.apiBase || "").replace(/\/$/, "");
+let isInternalNavigation = false;
 
 const defaultState = {
   mode: "online",
@@ -476,6 +477,35 @@ function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function navigateTo(path) {
+  isInternalNavigation = true;
+  window.location.href = path;
+}
+
+function leaveRoomSilently(state) {
+  if (state.mode !== "online" || !state.live.roomCode || !state.live.clientId) {
+    return;
+  }
+  const path = `/api/rooms/${state.live.roomCode}/leave`;
+  const endpoint = API_BASE ? `${API_BASE}${path}` : path;
+  const payload = JSON.stringify({ clientId: state.live.clientId });
+  try {
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "application/json" });
+      navigator.sendBeacon(endpoint, blob);
+      return;
+    }
+  } catch {}
+  try {
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true
+    });
+  } catch {}
+}
+
 function hydrateModeButtons(state) {
   const buttons = Array.from(document.querySelectorAll("[data-mode]"));
   if (!buttons.some((button) => button.dataset.mode === state.mode) && buttons[0]) {
@@ -604,7 +634,7 @@ function initWelcomePage() {
   document.querySelector("#welcomeContinue").addEventListener("click", (event) => {
     event.preventDefault();
     saveState(state);
-    window.location.href = "setup.html";
+    navigateTo("setup.html");
   });
 }
 
@@ -647,7 +677,7 @@ function initSetupPage() {
       return;
     }
     saveState(state);
-    window.location.href = "lobby.html";
+    navigateTo("lobby.html");
   });
 }
 
@@ -756,7 +786,7 @@ function initLobbyPage() {
         saveState(state);
         renderMembers();
         if (state.live.started) {
-          window.location.href = "game.html";
+          navigateTo("game.html");
         }
       }
     } catch {
@@ -778,7 +808,7 @@ function initLobbyPage() {
       pollId = window.setInterval(pollRoom, POLL_MS);
     }
     if (state.live.started) {
-      window.location.href = "game.html";
+      navigateTo("game.html");
     }
   }
 
@@ -937,18 +967,24 @@ function initLobbyPage() {
     saveState(state);
     renderMembers();
     if (state.live.started) {
-      window.location.href = "game.html";
+      navigateTo("game.html");
     }
   });
   offlineStartButton.addEventListener("click", () => {
     if (state.selectedCategoryNames.length !== MAX_ACTIVE_CATEGORIES) {
-      window.location.href = "setup.html";
+      navigateTo("setup.html");
       return;
     }
     buildPlayersFromInputs(state, playerInputs);
     buildBoard(state);
     saveState(state);
-    window.location.href = "game.html";
+    navigateTo("game.html");
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (!isInternalNavigation) {
+      leaveRoomSilently(state);
+    }
   });
 
   refreshShareUi();
@@ -970,7 +1006,7 @@ function initGamePage() {
     saveState(state);
   }
   if (!state.categories.length) {
-    window.location.href = "setup.html";
+    navigateTo("setup.html");
     return;
   }
   syncPlayersFromMembers(state);
@@ -1282,6 +1318,10 @@ function initGamePage() {
   document.querySelector("#markCorrect").addEventListener("click", () => scoreClue(true));
   document.querySelector("#markIncorrect").addEventListener("click", () => scoreClue(false));
   document.querySelector("#closeDialog").addEventListener("click", () => { closeClue(); startTurnTimer(); render(); });
+  const backToLobbyButton = document.querySelector("#backToLobby");
+  if (backToLobbyButton) {
+    backToLobbyButton.addEventListener("click", () => navigateTo("lobby.html"));
+  }
   window.addEventListener("keydown", (event) => {
     if (!clueDialog.open || !state.currentClueId) return;
     const player = state.players.find((item) => item.buzzKey === event.key);
@@ -1297,6 +1337,12 @@ function initGamePage() {
 
   render();
   startTurnTimer();
+
+  window.addEventListener("pagehide", () => {
+    if (!isInternalNavigation) {
+      leaveRoomSilently(state);
+    }
+  });
 }
 
 const page = document.body.dataset.page;
