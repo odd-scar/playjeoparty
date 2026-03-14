@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JeoParty AI | Lobby</title>
+  <meta name="theme-color" content="#0a1238">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=15">
+</head>
+<body data-page="lobby">
+  <div class="page-shell">
+    <section class="page-card view-panel">
+      <div class="view-topbar">
+        <a class="text-button" href="setup.html">Back</a>
+        <span class="pill" id="lobbyModePill">Online room</span>
+      </div>
+      <div class="mode-flow-card setup-hero-card">
+        <p class="eyebrow">Step 2</p>
+        <h1 class="page-title" id="lobbyTitle">Get everyone ready</h1>
+        <p class="hero-text" id="lobbyCopy">Add players, open a room if needed, then launch the game view.</p>
+        <div class="mode-chip-row" id="lobbyChipRow"></div>
+      </div>
+      <div class="settings-grid">
+        <div class="stack settings-card lobby-card" id="displayNameWrap">
+          <div class="section-mini section-mini-highlight">
+            <strong>Your profile</strong>
+            <span>This display name appears in live room joins and scoreboards.</span>
+          </div>
+          <label>
+            Your display name
+            <input id="displayName" type="text" maxlength="30" value="Host">
+          </label>
+          <button class="button button-secondary" id="copyRoomLink" type="button">Copy room link</button>
+          <p class="helper-text" id="shareStatus">Share the room link for local snapshots, or use room codes for true live multiplayer.</p>
+        </div>
+        <div class="stack settings-card lobby-card hidden-section" id="onlineToolsBlock">
+          <div class="section-mini section-mini-highlight">
+            <strong>Live room</strong>
+            <span>Open or join a synced room. Everyone presses start on their own device to begin.</span>
+          </div>
+          <label>
+            Room code
+            <input id="liveRoomCode" type="text" maxlength="8" placeholder="AB12CD">
+          </label>
+          <div class="action-row wrap-top">
+            <button class="button button-primary" id="createLiveRoom" type="button">Create live room</button>
+            <button class="button button-secondary" id="joinLiveRoom" type="button">Join room</button>
+            <button class="button button-ghost" id="leaveLiveRoom" type="button">Leave room</button>
+          </div>
+          <p class="helper-text" id="liveStatus" aria-live="polite">Start the Python server in this folder to enable live room codes and synced multiplayer.</p>
+        </div>
+      </div>
+      <div class="settings-grid top-gap">
+        <div class="stack settings-card lobby-card" id="playersBlock">
+          <div class="section-mini section-mini-highlight">
+            <strong id="playersHeading">Set up the scoreboard</strong>
+            <span id="playersCopy">Use manual names for couch play or quick scoring.</span>
+          </div>
+          <div class="player-fields">
+            <label>
+              Player one
+              <input class="player-name" type="text" data-player-slot="0" value="Alex">
+            </label>
+            <label>
+              Player two
+              <input class="player-name" type="text" data-player-slot="1" value="Jordan">
+            </label>
+            <label>
+              Player three
+              <input class="player-name" type="text" data-player-slot="2" value="Sam">
+            </label>
+            <label>
+              Player four
+              <input class="player-name" type="text" data-player-slot="3" value="">
+            </label>
+          </div>
+          <button class="button button-ghost" id="resetScores" type="button">Reset scores</button>
+        </div>
+        <div class="stack settings-card lobby-card hidden-section" id="liveMembersPanel">
+          <div class="section-mini section-mini-highlight">
+            <strong>Joined players</strong>
+            <span>The room fills automatically as people connect from their own device.</span>
+          </div>
+          <div class="member-list" id="memberList"></div>
+          <div class="action-row">
+            <button class="button button-primary" id="readyButton" type="button" disabled>Press start</button>
+          </div>
+          <p class="helper-text" id="readyStatus">Waiting for people to join.</p>
+        </div>
+      </div>
+      <div class="hero-actions top-gap" id="offlineStartWrap">
+        <button class="button button-primary" id="startGameOffline" type="button">Start game view</button>
+      </div>
+    </section>
+  </div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

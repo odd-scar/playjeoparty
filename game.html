@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JeoParty AI | Game</title>
+  <meta name="theme-color" content="#0a1238">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=15">
+</head>
+<body data-page="game">
+  <div class="page-shell">
+    <div class="app-grid game-layout board-first-layout">
+      <section class="panel board-panel">
+        <div class="board-header section-mini-highlight game-board-header">
+          <div>
+            <p class="eyebrow">Play</p>
+            <h2>Game board</h2>
+          </div>
+          <div class="board-actions">
+            <button class="button button-secondary" id="nextTurn" type="button">Rotate turn</button>
+            <button class="button button-ghost" id="newRound" type="button">Fresh board</button>
+          </div>
+        </div>
+        <div class="board-grid" id="boardGrid" aria-live="polite"></div>
+      </section>
+      <aside class="panel sidebar-panel compact-sidebar">
+        <div class="view-topbar compact-topbar">
+          <a class="text-button" href="lobby.html">Back</a>
+          <span class="pill" id="modePill">Online room</span>
+        </div>
+        <div class="section-heading compact section-mini-highlight game-state-card">
+          <p class="eyebrow">Game state</p>
+          <h2 id="roomTitle">Friday Trivia Night</h2>
+        </div>
+        <div class="pill-row">
+          <span class="pill" id="difficultyPill">Balanced board</span>
+          <span class="pill" id="remainingPill">25 clues left</span>
+          <span class="pill" id="syncPill">Local only</span>
+        </div>
+        <div class="scoreboard compact-scoreboard" id="scoreboard"></div>
+        <div class="host-card slim-note">
+          <p class="eyebrow">Game notes</p>
+          <p id="hostLine">The board is live.</p>
+        </div>
+        <div class="host-card slim-note">
+          <p class="eyebrow">Buzzers</p>
+          <p id="buzzerCopy">During a clue, press keys <strong>1</strong>, <strong>2</strong>, <strong>3</strong>, or <strong>4</strong> to lock in a player fast.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <dialog class="clue-dialog" id="clueDialog">
+    <form method="dialog" class="dialog-shell">
+      <button class="dialog-close" id="closeDialog" value="cancel" type="submit" aria-label="Close clue">x</button>
+      <p class="eyebrow" id="dialogCategory">Clue</p>
+      <h2 id="dialogValue">$100</h2>
+      <p class="clue-text" id="dialogClue">Clue appears here.</p>
+      <p class="answer-text" id="dialogAnswer" hidden></p>
+      <div class="timer-bar"><span id="timerFill"></span></div>
+      <p class="helper-text" id="buzzStatus">Buzz in with the buttons below or by pressing number keys.</p>
+      <div class="buzz-grid" id="buzzGrid"></div>
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="revealAnswer" type="button">Reveal answer</button>
+        <button class="button button-primary" id="markCorrect" type="button" disabled>Award points</button>
+        <button class="button button-ghost" id="markIncorrect" type="button" disabled>Mark wrong</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

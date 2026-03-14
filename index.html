@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JeoParty AI | Welcome</title>
+  <meta name="theme-color" content="#0a1238">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=15">
+</head>
+<body data-page="welcome">
+  <div class="page-shell narrow-shell">
+    <section class="hero page-card welcome-hero">
+      <div class="hero-copy mode-flow-card setup-hero-card">
+        <p class="eyebrow hero-kicker">Live Jeopardy night</p>
+        <h1>Fast party trivia with less setup.</h1>
+        <p class="hero-text">Pick a mode and move into the game flow.</p>
+      </div>
+      <aside class="hero-panel settings-card welcome-mode-panel">
+        <p class="eyebrow">Choose your mode</p>
+        <div class="mode-card-grid">
+          <button class="mode-card is-selected" type="button" data-mode="online">
+            <strong>Online room</strong>
+            <span>Create a room code so people can join from their own devices.</span>
+          </button>
+          <button class="mode-card" type="button" data-mode="allplay">
+            <strong>All-play party</strong>
+            <span>No host required. Everyone can jump in together.</span>
+          </button>
+        </div>
+        <div class="hero-actions">
+          <a class="button button-primary" id="welcomeContinue" href="setup.html">Continue</a>
+        </div>
+      </aside>
+    </section>
+  </div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JeoParty AI | Setup</title>
+  <meta name="theme-color" content="#0a1238">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=15">
+</head>
+<body data-page="setup">
+  <div class="page-shell">
+    <section class="page-card view-panel">
+      <div class="view-topbar">
+        <a class="text-button" href="index.html">Back</a>
+        <span class="pill" id="setupModePill">Online room</span>
+      </div>
+      <div class="mode-flow-card setup-hero-card">
+        <p class="eyebrow">Step 1</p>
+        <h1 class="page-title" id="setupTitle">Pick your categories</h1>
+        <p class="hero-text" id="setupCopy">Choose the room name, vibe, and 5 categories for this round.</p>
+        <div class="mode-chip-row">
+          <span class="mode-chip">5 categories</span>
+          <span class="mode-chip">Fast setup</span>
+          <span class="mode-chip">Fresh board every round</span>
+        </div>
+      </div>
+      <div class="settings-grid">
+        <div class="stack settings-card setup-card-emphasis">
+          <div class="setup-card-top">
+            <div class="section-mini section-mini-highlight">
+              <p class="eyebrow">Room Setup</p>
+              <strong>Build the room</strong>
+              <span>Name the game, set the clue vibe, and decide how intense each turn should feel.</span>
+            </div>
+          </div>
+          <label class="setup-field setup-field-featured setup-field-group">
+            <span class="field-label">Room name</span>
+            <span class="field-helper">What everyone sees in the lobby and game room</span>
+            <input id="roomName" type="text" maxlength="50" value="Friday Trivia Night">
+          </label>
+          <div class="setup-picker-grid">
+            <label class="setup-field setup-select-card list-style-card setup-field-group">
+              <span class="field-label">AI clue vibe</span>
+              <span class="field-helper">How the clue voice and room energy should feel</span>
+              <select id="hostVibe">
+                <option value="classic">Classic game show</option>
+                <option value="hype">Hype announcer</option>
+                <option value="chaotic">Chaotic friend mode</option>
+              </select>
+            </label>
+            <label class="setup-field setup-select-card list-style-card setup-field-group">
+              <span class="field-label">Difficulty curve</span>
+              <span class="field-helper">How direct or tricky the clue wording feels</span>
+              <select id="difficulty">
+                <option value="balanced">Balanced</option>
+                <option value="friendly">Friendly</option>
+                <option value="spicy">Spicy</option>
+              </select>
+            </label>
+          </div>
+          <div class="timer-band">
+            <label class="setup-field setup-select-card list-style-card timer-select-card setup-field-group">
+              <span class="field-label">Turn timer</span>
+              <span class="field-helper">Choose how long each player gets before the turn expires</span>
+              <select id="turnDuration">
+                <option value="120">2 minutes</option>
+                <option value="90">1 minute 30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="30">30 seconds</option>
+                <option value="10">10 seconds</option>
+              </select>
+            </label>
+            <label class="toggle setup-toggle emphasis-toggle compact-toggle">
+              <input id="speechToggle" type="checkbox">
+              <span>Use speech synthesis for clue readouts</span>
+            </label>
+          </div>
+        </div>
+        <div class="stack settings-card category-stage-card">
+          <div class="section-mini section-mini-highlight category-header-card">
+            <strong>Pick 5 categories</strong>
+            <span id="categoryHelpCopy">Choose any mix. The app builds a fresh 5x5 board from your selections.</span>
+          </div>
+          <div class="category-scroll-box">
+            <div class="category-picker" id="categoryPicker"></div>
+          </div>
+          <button class="button button-ghost" id="randomizeCategories" type="button">Randomize picks</button>
+        </div>
+      </div>
+      <div class="hero-actions top-gap">
+        <button class="button button-primary" id="continueToLobby" type="button">Continue to lobby</button>
+      </div>
+      <p class="helper-text" id="setupMessage" aria-live="polite"></p>
+    </section>
+  </div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

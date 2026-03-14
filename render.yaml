@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: jeoparty-api
+    runtime: python
+    rootDir: jeoparty-ai
+    buildCommand: ""
+    startCommand: python server.py
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://play.example.com
