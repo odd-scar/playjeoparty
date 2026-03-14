@@ -565,12 +565,11 @@ function buildPlayersFromInputs(state, inputs) {
   saveState(state);
 }
 function memberPayload(state) {
-  const self = state.live.members.find((member) => member.clientId === state.live.clientId);
   return {
     clientId: state.live.clientId,
     name: state.displayName || "Player",
     joinedAt: state.live.joinedAt,
-    ready: !!self?.ready
+    ready: false
   };
 }
 
@@ -728,6 +727,12 @@ function initLobbyPage() {
   playerInputs.forEach((input, index) => { input.value = state.players[index]?.name || ""; });
   liveRoomCodeInput.value = inviteRoomCode || state.live.roomCode || "";
 
+  if (!inviteRoomCode && state.mode === "online") {
+    state.live.started = false;
+    state.live.members = [];
+    saveState(state);
+  }
+
   function inviteUrlForCode(roomCode) {
     const inviteUrl = new URL(window.location.href);
     inviteUrl.searchParams.set("room", roomCode);
@@ -736,7 +741,7 @@ function initLobbyPage() {
 
   function refreshShareUi() {
     if (state.mode === "online") {
-      const shareCode = (state.live.roomCode || liveRoomCodeInput.value.trim().toUpperCase());
+      const shareCode = state.live.enabled ? state.live.roomCode : "";
       copyRoomButton.textContent = "Copy invite link";
       copyRoomButton.disabled = !shareCode;
       if (shareCode) {
@@ -841,10 +846,6 @@ function initLobbyPage() {
         }).catch(() => {
           liveStatus.textContent = `Room ${inviteRoomCode} was not found.`;
         });
-      });
-    } else if (state.live.enabled && state.live.roomCode) {
-      joinExistingRoom(state.live.roomCode).catch(() => {
-        liveStatus.textContent = "Reconnect failed. Rejoin the room code.";
       });
     }
   }
