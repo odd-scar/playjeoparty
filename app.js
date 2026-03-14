@@ -340,6 +340,7 @@ const defaultState = {
   activePlayerIndex: 0,
   currentClueId: "",
   buzzedPlayerId: "",
+  answerRevealed: false,
   feed: [],
   live: {
     enabled: false,
@@ -418,6 +419,7 @@ function buildBoard(state) {
   state.activePlayerIndex = 0;
   state.currentClueId = "";
   state.buzzedPlayerId = "";
+  state.answerRevealed = false;
   pushFeed(state, `New board created with ${state.selectedCategoryNames.join(", ")}.`);
 }
 function remainingCount(state) {
@@ -1040,6 +1042,7 @@ function initGamePage() {
 
   let clueTimerId = 0;
   let turnTimerId = 0;
+  let syncedClueId = state.currentClueId || "";
 
   function activePlayer() {
     return state.players[state.activePlayerIndex] || { name: "Player" };
@@ -1055,6 +1058,7 @@ function initGamePage() {
       activePlayerIndex: state.activePlayerIndex,
       currentClueId: state.currentClueId,
       buzzedPlayerId: state.buzzedPlayerId,
+      answerRevealed: state.answerRevealed,
       feed: state.feed
     });
     if (serialized === state.live.lastSerializedState) {
@@ -1073,9 +1077,9 @@ function initGamePage() {
     } catch {}
   }
 
-  function saveAndRender(push = true) {
+  function saveAndRender(push = true, previousClueId = syncedClueId) {
     saveState(state);
-    render();
+    render(previousClueId);
     if (push) {
       pushLiveState();
     }
@@ -1117,7 +1121,7 @@ function initGamePage() {
         button.type = "button";
         button.className = "board-tile";
         button.textContent = clue.used ? "USED" : `$${value}`;
-        button.disabled = clue.used;
+        button.disabled = clue.used || Boolean(state.currentClueId);
         if (clue.used) {
           button.classList.add("used");
         }
@@ -1142,40 +1146,68 @@ function initGamePage() {
         buzzStatus.textContent = `${player.name} buzzed in first.`;
         markCorrectButton.disabled = false;
         markIncorrectButton.disabled = false;
-        renderBuzzers();
-        renderScoreboard();
+        saveAndRender();
       });
       buzzGrid.append(button);
     });
   }
 
-  function openClue(clueId) {
-    const clue = state.categories.flatMap((category) => category.clues).find((item) => item.id === clueId);
-    if (!clue || clue.used) {
+  function syncClueDialog(previousClueId = syncedClueId) {
+    const clue = getCurrentClue(state);
+    if (!clue) {
+      if (clueDialog.open) {
+        clueDialog.close();
+      }
+      stopClueTimer();
+      markCorrectButton.disabled = true;
+      markIncorrectButton.disabled = true;
+      syncedClueId = "";
       return;
     }
-    state.currentClueId = clue.id;
-    state.buzzedPlayerId = "";
     dialogCategory.textContent = "Clue";
     dialogValue.textContent = `$${clue.value}`;
     dialogClue.textContent = clue.clue;
-    dialogAnswer.hidden = true;
-    dialogAnswer.textContent = "";
-    buzzStatus.textContent = "Buzz in with the buttons below or by pressing number keys.";
-    markCorrectButton.disabled = true;
-    markIncorrectButton.disabled = true;
+    dialogAnswer.hidden = !state.answerRevealed;
+    dialogAnswer.textContent = state.answerRevealed ? `Answer: ${clue.answer}` : "";
+    const buzzedPlayer = state.players.find((player) => player.id === state.buzzedPlayerId);
+    if (buzzedPlayer) {
+      buzzStatus.textContent = `${buzzedPlayer.name} buzzed in first.`;
+      markCorrectButton.disabled = false;
+      markIncorrectButton.disabled = false;
+    } else {
+      buzzStatus.textContent = "Buzz in with the buttons below or by pressing number keys.";
+      markCorrectButton.disabled = true;
+      markIncorrectButton.disabled = true;
+    }
     renderBuzzers();
-    clueDialog.showModal();
-    startClueTimer();
-    startTurnTimer();
-    speakClue(state, clue.clue);
+    if (!clueDialog.open) {
+      clueDialog.showModal();
+    }
+    if (state.currentClueId !== previousClueId) {
+      startClueTimer();
+      startTurnTimer();
+      speakClue(state, clue.clue);
+    }
+    syncedClueId = state.currentClueId;
+  }
+
+  function openClue(clueId) {
+    const clue = state.categories.flatMap((category) => category.clues).find((item) => item.id === clueId);
+    if (!clue || clue.used || state.currentClueId) {
+      return;
+    }
+    const previousClueId = state.currentClueId;
+    state.currentClueId = clue.id;
+    state.buzzedPlayerId = "";
+    state.answerRevealed = false;
     setHostLine(`${clue.category} for $${clue.value}. ${activePlayer().name}, you control the board.`);
+    saveAndRender(true, previousClueId);
   }
 
   function closeClue() {
     state.currentClueId = "";
     state.buzzedPlayerId = "";
-    clueDialog.close();
+    state.answerRevealed = false;
     stopClueTimer();
   }
 
@@ -1274,7 +1306,7 @@ function initGamePage() {
     if (turnTimerFill) turnTimerFill.style.transform = "scaleX(1)";
   }
 
-  function render() {
+  function render(previousClueId = syncedClueId) {
     roomTitle.textContent = state.roomName;
     modePill.textContent = modeLabel(state.mode);
     difficultyPill.textContent = difficultyLabel(state.difficulty);
@@ -1286,6 +1318,7 @@ function initGamePage() {
       : "During a clue, press keys <strong>1</strong>, <strong>2</strong>, <strong>3</strong>, or <strong>4</strong> to lock in a player fast.";
     renderScoreboard();
     renderBoard();
+    syncClueDialog(previousClueId);
   }
 
   if (state.live.enabled && state.live.roomCode) {
@@ -1293,9 +1326,10 @@ function initGamePage() {
       try {
         const payload = await apiRequest(`/api/rooms/${state.live.roomCode}`);
         if (payload.version > state.live.version) {
+          const previousClueId = state.currentClueId;
           applyRoomPayload(state, payload);
           syncPlayersFromMembers(state);
-          saveAndRender(false);
+          saveAndRender(false, previousClueId);
         }
       } catch {}
     }, POLL_MS);
@@ -1313,12 +1347,12 @@ function initGamePage() {
   document.querySelector("#revealAnswer").addEventListener("click", () => {
     const clue = getCurrentClue(state);
     if (!clue) return;
-    dialogAnswer.hidden = false;
-    dialogAnswer.textContent = `Answer: ${clue.answer}`;
+    state.answerRevealed = true;
+    saveAndRender();
   });
   document.querySelector("#markCorrect").addEventListener("click", () => scoreClue(true));
   document.querySelector("#markIncorrect").addEventListener("click", () => scoreClue(false));
-  document.querySelector("#closeDialog").addEventListener("click", () => { closeClue(); startTurnTimer(); render(); });
+  document.querySelector("#closeDialog").addEventListener("click", () => { closeClue(); startTurnTimer(); saveAndRender(); });
   const backToLobbyButton = document.querySelector("#backToLobby");
   if (backToLobbyButton) {
     backToLobbyButton.addEventListener("click", () => navigateTo("lobby.html"));
@@ -1331,8 +1365,7 @@ function initGamePage() {
       buzzStatus.textContent = `${player.name} buzzed in first.`;
       markCorrectButton.disabled = false;
       markIncorrectButton.disabled = false;
-      renderBuzzers();
-      renderScoreboard();
+      saveAndRender();
     }
   });
 
