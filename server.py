@@ -17,18 +17,25 @@ LOCK = threading.Lock()
 DEFAULT_ALLOWED_ORIGINS = "*"
 
 
+def normalize_origin(value: str | None) -> str:
+    if not value:
+        return ""
+    return value.strip().rstrip("/")
+
+
 def allowed_origins() -> list[str]:
     raw = os.getenv("ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS)
-    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    origins = [normalize_origin(item) for item in raw.split(",") if item.strip()]
     return origins or [DEFAULT_ALLOWED_ORIGINS]
 
 
 def pick_origin(request_origin: str | None) -> str:
+    normalized_request_origin = normalize_origin(request_origin)
     origins = allowed_origins()
     if "*" in origins:
         return "*"
-    if request_origin and request_origin in origins:
-        return request_origin
+    if normalized_request_origin and normalized_request_origin in origins:
+        return normalized_request_origin
     return origins[0]
 
 
