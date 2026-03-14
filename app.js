@@ -461,12 +461,12 @@ async function checkServerHealth(state, statusEl) {
     await apiRequest("/api/health");
     state.live.serverReady = true;
     if (statusEl) {
-      statusEl.textContent = "Live server detected. You can create or join room codes.";
+      statusEl.textContent = "Live server connected. You can create or join room codes.";
     }
   } catch {
     state.live.serverReady = false;
     if (statusEl) {
-      statusEl.textContent = "Live server not detected yet. Run server.py in this folder to enable live room codes.";
+      statusEl.textContent = "Live server is waking up or unreachable. Wait a moment and try again.";
     }
   }
   saveState(state);
@@ -825,22 +825,30 @@ function initLobbyPage() {
   });
   document.querySelector("#createLiveRoom").addEventListener("click", async () => {
     if (!state.live.serverReady) {
-      liveStatus.textContent = "Start the Python server first.";
-      return;
+      liveStatus.textContent = "Checking live server...";
+      await checkServerHealth(state, liveStatus);
+      if (!state.live.serverReady) {
+        liveStatus.textContent = "Live server is not reachable yet. Wait 20-40 seconds and try again.";
+        return;
+      }
     }
     buildBoard(state);
-    const payload = await apiRequest("/api/rooms/create", {
-      method: "POST",
-      body: JSON.stringify({ state, member: memberPayload(state) })
-    });
-    applyRoomPayload(state, payload);
-    saveState(state);
-    liveRoomCodeInput.value = payload.roomCode;
-    liveStatus.textContent = `Room ${payload.roomCode} is open.`;
-    refreshShareUi();
-    renderMembers();
-    if (!pollId) {
-      pollId = window.setInterval(pollRoom, POLL_MS);
+    try {
+      const payload = await apiRequest("/api/rooms/create", {
+        method: "POST",
+        body: JSON.stringify({ state, member: memberPayload(state) })
+      });
+      applyRoomPayload(state, payload);
+      saveState(state);
+      liveRoomCodeInput.value = payload.roomCode;
+      liveStatus.textContent = `Room ${payload.roomCode} is open.`;
+      refreshShareUi();
+      renderMembers();
+      if (!pollId) {
+        pollId = window.setInterval(pollRoom, POLL_MS);
+      }
+    } catch {
+      liveStatus.textContent = "Could not create room yet. Please try again in a few seconds.";
     }
   });
   document.querySelector("#joinLiveRoom").addEventListener("click", async () => {
@@ -848,6 +856,14 @@ function initLobbyPage() {
     if (!roomCode) {
       liveStatus.textContent = "Enter a room code first.";
       return;
+    }
+    if (!state.live.serverReady) {
+      liveStatus.textContent = "Checking live server...";
+      await checkServerHealth(state, liveStatus);
+      if (!state.live.serverReady) {
+        liveStatus.textContent = "Live server is not reachable yet. Wait 20-40 seconds and try again.";
+        return;
+      }
     }
     try {
       await joinExistingRoom(roomCode);
