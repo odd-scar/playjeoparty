@@ -665,6 +665,8 @@ function initLobbyPage() {
   const offlineStartWrap = document.querySelector("#offlineStartWrap");
   const offlineStartButton = document.querySelector("#startGameOffline");
   const liveRoomCodeInput = document.querySelector("#liveRoomCode");
+  const copyRoomButton = document.querySelector("#copyRoomLink");
+  const inviteRoomCode = (new URLSearchParams(window.location.search).get("room") || "").trim().toUpperCase();
   let pollId = 0;
 
   document.querySelector("#lobbyModePill").textContent = modeLabel(state.mode);
@@ -685,7 +687,29 @@ function initLobbyPage() {
   playersCopy.textContent = state.mode === "allplay" ? "Use manual names for local scoring." : "Use manual names for quick scoring.";
   displayNameInput.value = state.displayName;
   playerInputs.forEach((input, index) => { input.value = state.players[index]?.name || ""; });
-  liveRoomCodeInput.value = state.live.roomCode || "";
+  liveRoomCodeInput.value = inviteRoomCode || state.live.roomCode || "";
+
+  function inviteUrlForCode(roomCode) {
+    const inviteUrl = new URL(window.location.href);
+    inviteUrl.searchParams.set("room", roomCode);
+    return inviteUrl.toString();
+  }
+
+  function refreshShareUi() {
+    if (state.mode === "online") {
+      copyRoomButton.textContent = "Copy invite link";
+      copyRoomButton.disabled = !state.live.roomCode;
+      if (state.live.roomCode) {
+        shareStatus.textContent = `Share invite link or room code ${state.live.roomCode}.`;
+      } else {
+        shareStatus.textContent = "Create a live room first, then copy invite link.";
+      }
+      return;
+    }
+    copyRoomButton.textContent = "Copy snapshot link";
+    copyRoomButton.disabled = false;
+    shareStatus.textContent = "Snapshot links are for local quick-share games.";
+  }
 
   function renderMembers() {
     memberList.innerHTML = "";
@@ -699,6 +723,7 @@ function initLobbyPage() {
     const me = members.find((member) => member.clientId === state.live.clientId);
     readyButton.disabled = !state.live.roomCode;
     readyButton.textContent = me?.ready ? "Cancel start" : "Press start";
+    refreshShareUi();
     if (!members.length) {
       readyStatus.textContent = "Waiting for people to join.";
     } else if (state.live.started) {
@@ -749,7 +774,13 @@ function initLobbyPage() {
 
   if (state.mode === "online") {
     checkServerHealth(state, liveStatus);
-    if (state.live.enabled && state.live.roomCode) {
+    if (inviteRoomCode) {
+      joinExistingRoom(inviteRoomCode).then(() => {
+        liveStatus.textContent = `Joined room ${inviteRoomCode}.`;
+      }).catch(() => {
+        liveStatus.textContent = `Room ${inviteRoomCode} was not found.`;
+      });
+    } else if (state.live.enabled && state.live.roomCode) {
       joinExistingRoom(state.live.roomCode).catch(() => {
         liveStatus.textContent = "Reconnect failed. Rejoin the room code.";
       });
@@ -766,6 +797,21 @@ function initLobbyPage() {
     saveState(state);
   });
   document.querySelector("#copyRoomLink").addEventListener("click", async () => {
+    if (state.mode === "online") {
+      const roomCode = state.live.roomCode || liveRoomCodeInput.value.trim().toUpperCase();
+      if (!roomCode) {
+        shareStatus.textContent = "Create a live room first.";
+        return;
+      }
+      const inviteUrl = inviteUrlForCode(roomCode);
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        shareStatus.textContent = `Invite link copied for room ${roomCode}.`;
+      } catch {
+        shareStatus.textContent = `Copy failed. Send room code ${roomCode} to friends.`;
+      }
+      return;
+    }
     buildBoard(state);
     saveState(state);
     const encoded = encodeURIComponent(JSON.stringify({ ...state, live: undefined }));
@@ -791,6 +837,7 @@ function initLobbyPage() {
     saveState(state);
     liveRoomCodeInput.value = payload.roomCode;
     liveStatus.textContent = `Room ${payload.roomCode} is open.`;
+    refreshShareUi();
     renderMembers();
     if (!pollId) {
       pollId = window.setInterval(pollRoom, POLL_MS);
@@ -826,6 +873,7 @@ function initLobbyPage() {
     saveState(state);
     liveRoomCodeInput.value = "";
     liveStatus.textContent = "Left live room.";
+    refreshShareUi();
     renderMembers();
   });
   readyButton.addEventListener("click", async () => {
@@ -855,6 +903,8 @@ function initLobbyPage() {
     saveState(state);
     window.location.href = "game.html";
   });
+
+  refreshShareUi();
 }
 
 function initGamePage() {
