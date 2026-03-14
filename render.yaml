@@ -2,7 +2,7 @@ services:
   - type: web
     name: jeoparty-api
     runtime: python
-    rootDir: jeoparty-ai
+    rootDir: .
     buildCommand: ""
     startCommand: python server.py
     envVars:

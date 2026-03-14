@@ -8,7 +8,7 @@ For live multiplayer, both must be publicly deployed.
 
 ## 1) Deploy backend API (Render)
 1. Create a new Render Web Service from this repo.
-2. Set `Root Directory` to `jeoparty-ai`.
+2. Set `Root Directory` to repo root (`.`) or leave it empty.
 3. Set `Start Command` to:
    - `python server.py`
 4. Set env var:
@@ -18,7 +18,7 @@ For live multiplayer, both must be publicly deployed.
 
 ## 2) Deploy frontend (Vercel or Netlify)
 1. Create a new frontend project from this repo.
-2. Set project root to `jeoparty-ai`.
+2. Set project root to repo root (`.`).
 3. Static deploy only (no build command required).
 4. Edit `config.js`:
    - `apiBase: "https://jeoparty-api.onrender.com"`
