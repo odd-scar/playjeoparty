@@ -734,7 +734,7 @@ function initLobbyPage() {
   }
 
   function inviteUrlForCode(roomCode) {
-    const inviteUrl = new URL(window.location.href);
+    const inviteUrl = new URL("lobby.html", window.location.origin + window.location.pathname.replace(/[^/]*$/, ""));
     inviteUrl.searchParams.set("room", roomCode);
     return inviteUrl.toString();
   }
