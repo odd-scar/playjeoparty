@@ -472,6 +472,10 @@ async function checkServerHealth(state, statusEl) {
   saveState(state);
 }
 
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function hydrateModeButtons(state) {
   const buttons = Array.from(document.querySelectorAll("[data-mode]"));
   if (!buttons.some((button) => button.dataset.mode === state.mode) && buttons[0]) {
@@ -669,6 +673,11 @@ function initLobbyPage() {
   const inviteRoomCode = (new URLSearchParams(window.location.search).get("room") || "").trim().toUpperCase();
   let pollId = 0;
 
+  if (inviteRoomCode && state.mode !== "online") {
+    state.mode = "online";
+    saveState(state);
+  }
+
   document.querySelector("#lobbyModePill").textContent = modeLabel(state.mode);
   document.querySelector("#lobbyTitle").textContent = state.mode === "online" ? "Join the room" : "Quick lobby";
   document.querySelector("#lobbyCopy").textContent = state.mode === "online"
@@ -697,10 +706,11 @@ function initLobbyPage() {
 
   function refreshShareUi() {
     if (state.mode === "online") {
+      const shareCode = (state.live.roomCode || liveRoomCodeInput.value.trim().toUpperCase());
       copyRoomButton.textContent = "Copy invite link";
-      copyRoomButton.disabled = !state.live.roomCode;
-      if (state.live.roomCode) {
-        shareStatus.textContent = `Share invite link or room code ${state.live.roomCode}.`;
+      copyRoomButton.disabled = !shareCode;
+      if (shareCode) {
+        shareStatus.textContent = `Share invite link or room code ${shareCode}.`;
       } else {
         shareStatus.textContent = "Create a live room first, then copy invite link.";
       }
@@ -772,13 +782,35 @@ function initLobbyPage() {
     }
   }
 
+  async function ensureServerReady() {
+    await checkServerHealth(state, liveStatus);
+    if (state.live.serverReady) {
+      return true;
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      liveStatus.textContent = `Waking live server... (${attempt + 2}/3)`;
+      await wait(1800);
+      await checkServerHealth(state, liveStatus);
+      if (state.live.serverReady) {
+        return true;
+      }
+    }
+    liveStatus.textContent = "Live server is not reachable yet. Wait 20-40 seconds and try again.";
+    return false;
+  }
+
   if (state.mode === "online") {
     checkServerHealth(state, liveStatus);
     if (inviteRoomCode) {
-      joinExistingRoom(inviteRoomCode).then(() => {
-        liveStatus.textContent = `Joined room ${inviteRoomCode}.`;
-      }).catch(() => {
-        liveStatus.textContent = `Room ${inviteRoomCode} was not found.`;
+      ensureServerReady().then((ready) => {
+        if (!ready) {
+          return;
+        }
+        joinExistingRoom(inviteRoomCode).then(() => {
+          liveStatus.textContent = `Joined room ${inviteRoomCode}.`;
+        }).catch(() => {
+          liveStatus.textContent = `Room ${inviteRoomCode} was not found.`;
+        });
       });
     } else if (state.live.enabled && state.live.roomCode) {
       joinExistingRoom(state.live.roomCode).catch(() => {
@@ -791,6 +823,7 @@ function initLobbyPage() {
     state.displayName = displayNameInput.value.trim() || "Player";
     saveState(state);
   });
+  liveRoomCodeInput.addEventListener("input", refreshShareUi);
   playerInputs.forEach((input) => input.addEventListener("input", () => buildPlayersFromInputs(state, playerInputs)));
   document.querySelector("#resetScores").addEventListener("click", () => {
     state.players = state.players.map((player) => ({ ...player, score: 0 }));
@@ -826,9 +859,8 @@ function initLobbyPage() {
   document.querySelector("#createLiveRoom").addEventListener("click", async () => {
     if (!state.live.serverReady) {
       liveStatus.textContent = "Checking live server...";
-      await checkServerHealth(state, liveStatus);
-      if (!state.live.serverReady) {
-        liveStatus.textContent = "Live server is not reachable yet. Wait 20-40 seconds and try again.";
+      const ready = await ensureServerReady();
+      if (!ready) {
         return;
       }
     }
@@ -859,9 +891,8 @@ function initLobbyPage() {
     }
     if (!state.live.serverReady) {
       liveStatus.textContent = "Checking live server...";
-      await checkServerHealth(state, liveStatus);
-      if (!state.live.serverReady) {
-        liveStatus.textContent = "Live server is not reachable yet. Wait 20-40 seconds and try again.";
+      const ready = await ensureServerReady();
+      if (!ready) {
         return;
       }
     }
