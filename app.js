@@ -320,6 +320,32 @@ const PLAYER_COLORS = ["#ffcb52", "#4ce0b3", "#ff6fb5", "#4da0ff"];
 const CLUE_TIMER_MS = 18000;
 const POLL_MS = 1500;
 const API_BASE = (window.JEOPARTY_CONFIG?.apiBase || "").replace(/\/$/, "");
+const CLUE_HISTORY_KEY = "jeoparty-clue-history";
+const CATEGORY_POOL_SIZE = 1000;
+const CLUE_TEMPLATES = [
+  "{fact}",
+  "Identify the answer: {fact}",
+  "Name this answer: {fact}",
+  "Which answer fits this clue: {fact}",
+  "Trivia check: {fact}",
+  "Answer this clue: {fact}",
+  "Find the exact answer: {fact}",
+  "Call it out: {fact}",
+  "Pick the best answer: {fact}",
+  "What answer matches this clue: {fact}"
+];
+const CLUE_FINISHERS = [
+  "",
+  "Keep the response specific.",
+  "A short answer is enough.",
+  "Use the most precise name.",
+  "Think about the key noun.",
+  "One exact term solves it.",
+  "Go with the standard textbook answer.",
+  "Use the proper title or term.",
+  "Focus on the giveaway detail."
+];
+const generatedCategoryPoolCache = new Map();
 let isInternalNavigation = false;
 
 const defaultState = {
@@ -381,6 +407,53 @@ function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function slugify(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function loadClueHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CLUE_HISTORY_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveClueHistory(history) {
+  localStorage.setItem(CLUE_HISTORY_KEY, JSON.stringify(history));
+}
+
+function expandedCategoryPool(name) {
+  if (generatedCategoryPoolCache.has(name)) {
+    return generatedCategoryPoolCache.get(name);
+  }
+  const seeds = Array.isArray(CATEGORY_BANK[name]) ? CATEGORY_BANK[name] : [];
+  if (!seeds.length) {
+    generatedCategoryPoolCache.set(name, []);
+    return [];
+  }
+  const pool = [];
+  const categorySlug = slugify(name);
+  for (let index = 0; index < CATEGORY_POOL_SIZE; index += 1) {
+    const seedIndex = index % seeds.length;
+    const variantIndex = Math.floor(index / seeds.length);
+    const [answer, fact] = seeds[seedIndex];
+    const template = CLUE_TEMPLATES[(variantIndex * 5 + seedIndex) % CLUE_TEMPLATES.length];
+    const finisher = CLUE_FINISHERS[(variantIndex * 7 + seedIndex) % CLUE_FINISHERS.length];
+    const normalizedFact = String(fact || "").trim();
+    const clueBase = template.replace("{fact}", normalizedFact);
+    const clue = finisher ? `${clueBase} ${finisher}` : clueBase;
+    pool.push({
+      id: `${categorySlug}-${seedIndex}-${variantIndex}`,
+      answer,
+      clue
+    });
+  }
+  generatedCategoryPoolCache.set(name, pool);
+  return pool;
+}
+
 function shuffle(list) {
   const copy = [...list];
   for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -391,7 +464,45 @@ function shuffle(list) {
 }
 
 function sampleEntries(name) {
-  return shuffle(CATEGORY_BANK[name]).slice(0, VALUES.length);
+  const pool = expandedCategoryPool(name);
+  if (!pool.length) {
+    return [];
+  }
+  const history = loadClueHistory();
+  let usedIds = new Set(Array.isArray(history[name]) ? history[name] : []);
+  let available = pool.filter((entry) => !usedIds.has(entry.id));
+  if (available.length < VALUES.length) {
+    usedIds = new Set();
+    available = [...pool];
+  }
+  const picks = [];
+  const seenAnswers = new Set();
+  for (const entry of shuffle(available)) {
+    const answerKey = String(entry.answer || "").toLowerCase();
+    if (seenAnswers.has(answerKey)) {
+      continue;
+    }
+    picks.push(entry);
+    seenAnswers.add(answerKey);
+    if (picks.length === VALUES.length) {
+      break;
+    }
+  }
+  if (picks.length < VALUES.length) {
+    for (const entry of shuffle(available)) {
+      if (picks.some((picked) => picked.id === entry.id)) {
+        continue;
+      }
+      picks.push(entry);
+      if (picks.length === VALUES.length) {
+        break;
+      }
+    }
+  }
+  picks.forEach((entry) => usedIds.add(entry.id));
+  history[name] = Array.from(usedIds).slice(-CATEGORY_POOL_SIZE);
+  saveClueHistory(history);
+  return picks;
 }
 
 function modeLabel(mode) {
@@ -409,12 +520,12 @@ function createClueText(state, fact) {
 function buildBoard(state) {
   state.categories = state.selectedCategoryNames.map((name) => ({
     name,
-    clues: sampleEntries(name).map(([answer, fact], clueIndex) => ({
-      id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${clueIndex}`,
+    clues: sampleEntries(name).map((entry, clueIndex) => ({
+      id: entry.id,
       category: name,
       value: VALUES[clueIndex],
-      answer,
-      clue: createClueText(state, fact),
+      answer: entry.answer,
+      clue: createClueText(state, entry.clue),
       used: false
     }))
   }));
