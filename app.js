@@ -521,6 +521,15 @@ function clearLiveRoomState(state) {
   state.live.lastSerializedState = "";
 }
 
+function resetScoresOnly(state) {
+  state.players = state.players.map((player, index) => ({
+    ...player,
+    score: 0,
+    color: PLAYER_COLORS[index % PLAYER_COLORS.length],
+    buzzKey: String(index + 1)
+  }));
+}
+
 function resetRoundState(state) {
   clearLiveRoomState(state);
   state.categories = [];
@@ -531,12 +540,7 @@ function resetRoundState(state) {
   state.scoringLocked = false;
   state.activePlayerIndex = 0;
   state.feed = [];
-  state.players = state.players.map((player, index) => ({
-    ...player,
-    score: 0,
-    color: PLAYER_COLORS[index % PLAYER_COLORS.length],
-    buzzKey: String(index + 1)
-  }));
+  resetScoresOnly(state);
 }
 
 async function leaveRoomNow(state) {
@@ -982,6 +986,7 @@ function initLobbyPage() {
   });
   document.querySelector("#leaveLiveRoom").addEventListener("click", async () => {
     await leaveRoomNow(state);
+    resetScoresOnly(state);
     clearLiveRoomState(state);
     saveState(state);
     liveRoomCodeInput.value = "";
@@ -1421,7 +1426,19 @@ function initGamePage() {
   const backToLobbyButton = document.querySelector("#backToLobby");
   const endRoomButton = document.querySelector("#endRoom");
   if (backToLobbyButton) {
-    backToLobbyButton.addEventListener("click", () => navigateTo("lobby.html"));
+    backToLobbyButton.addEventListener("click", async () => {
+      resetScoresOnly(state);
+      state.currentClueId = "";
+      state.buzzedPlayerId = "";
+      state.answerRevealed = false;
+      state.clueOpenedAt = 0;
+      state.scoringLocked = false;
+      if (state.live.enabled && state.live.roomCode) {
+        await pushLiveState();
+      }
+      saveState(state);
+      navigateTo("lobby.html");
+    });
   }
   if (endRoomButton) {
     endRoomButton.addEventListener("click", async () => {
