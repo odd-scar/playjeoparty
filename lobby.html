@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=16">
+  <link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body data-page="lobby">
   <div class="page-shell">
@@ -22,6 +22,10 @@
         <h1 class="page-title" id="lobbyTitle">Get everyone ready</h1>
         <p class="hero-text" id="lobbyCopy">Add players, open a room if needed, then launch the game view.</p>
         <div class="mode-chip-row" id="lobbyChipRow"></div>
+      </div>
+      <div class="section-mini section-mini-highlight lobby-howto-card">
+        <strong>How live play works</strong>
+        <p class="helper-text">Create a room, share invite link, everyone joins and presses start, then each clue syncs across all devices.</p>
       </div>
       <div class="settings-grid">
         <div class="stack settings-card lobby-card" id="displayNameWrap">
@@ -49,8 +53,9 @@
             <button class="button button-primary" id="createLiveRoom" type="button">Create live room</button>
             <button class="button button-secondary" id="joinLiveRoom" type="button">Join room</button>
             <button class="button button-ghost" id="leaveLiveRoom" type="button">Leave room</button>
+            <button class="button button-ghost" id="startNewRoom" type="button">Start new room</button>
           </div>
-          <p class="helper-text" id="liveStatus" aria-live="polite">Start the Python server in this folder to enable live room codes and synced multiplayer.</p>
+          <p class="helper-text" id="liveStatus" aria-live="polite">Live server status appears here. If it was idle, waking can take 20-60 seconds.</p>
         </div>
       </div>
       <div class="settings-grid top-gap">
@@ -96,7 +101,7 @@
       </div>
     </section>
   </div>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=2"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

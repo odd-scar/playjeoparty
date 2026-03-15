@@ -473,7 +473,7 @@ async function checkServerHealth(state, statusEl) {
   } catch {
     state.live.serverReady = false;
     if (statusEl) {
-      statusEl.textContent = "Live server is waking up or unreachable. Wait a moment and try again.";
+      statusEl.textContent = "Live server is waking up. First request can take 20-60 seconds if idle.";
     }
   }
   saveState(state);
@@ -508,6 +508,45 @@ function leaveRoomSilently(state) {
       headers: { "Content-Type": "application/json" },
       body: payload,
       keepalive: true
+    });
+  } catch {}
+}
+
+function clearLiveRoomState(state) {
+  state.live.enabled = false;
+  state.live.roomCode = "";
+  state.live.version = 0;
+  state.live.started = false;
+  state.live.members = [];
+  state.live.lastSerializedState = "";
+}
+
+function resetRoundState(state) {
+  clearLiveRoomState(state);
+  state.categories = [];
+  state.currentClueId = "";
+  state.buzzedPlayerId = "";
+  state.answerRevealed = false;
+  state.clueOpenedAt = 0;
+  state.scoringLocked = false;
+  state.activePlayerIndex = 0;
+  state.feed = [];
+  state.players = state.players.map((player, index) => ({
+    ...player,
+    score: 0,
+    color: PLAYER_COLORS[index % PLAYER_COLORS.length],
+    buzzKey: String(index + 1)
+  }));
+}
+
+async function leaveRoomNow(state) {
+  if (!state.live.roomCode) {
+    return;
+  }
+  try {
+    await apiRequest(`/api/rooms/${state.live.roomCode}/leave`, {
+      method: "POST",
+      body: JSON.stringify({ clientId: state.live.clientId })
     });
   } catch {}
 }
@@ -705,6 +744,7 @@ function initLobbyPage() {
   const offlineStartButton = document.querySelector("#startGameOffline");
   const liveRoomCodeInput = document.querySelector("#liveRoomCode");
   const copyRoomButton = document.querySelector("#copyRoomLink");
+  const startNewRoomButton = document.querySelector("#startNewRoom");
   const inviteRoomCode = (new URLSearchParams(window.location.search).get("room") || "").trim().toUpperCase();
   let pollId = 0;
 
@@ -836,7 +876,7 @@ function initLobbyPage() {
         return true;
       }
     }
-    liveStatus.textContent = "Live server is not reachable yet. Wait 20-40 seconds and try again.";
+    liveStatus.textContent = "Live server is still waking up. Wait 20-60 seconds, then try again.";
     return false;
   }
 
@@ -941,25 +981,22 @@ function initLobbyPage() {
     }
   });
   document.querySelector("#leaveLiveRoom").addEventListener("click", async () => {
-    if (state.live.roomCode) {
-      try {
-        await apiRequest(`/api/rooms/${state.live.roomCode}/leave`, {
-          method: "POST",
-          body: JSON.stringify({ clientId: state.live.clientId })
-        });
-      } catch {}
-    }
-    state.live.enabled = false;
-    state.live.roomCode = "";
-    state.live.version = 0;
-    state.live.started = false;
-    state.live.members = [];
+    await leaveRoomNow(state);
+    clearLiveRoomState(state);
     saveState(state);
     liveRoomCodeInput.value = "";
     liveStatus.textContent = "Left live room.";
     refreshShareUi();
     renderMembers();
   });
+  if (startNewRoomButton) {
+    startNewRoomButton.addEventListener("click", async () => {
+      await leaveRoomNow(state);
+      resetRoundState(state);
+      saveState(state);
+      navigateTo("setup.html");
+    });
+  }
   readyButton.addEventListener("click", async () => {
     if (!state.live.roomCode) {
       return;
@@ -1382,8 +1419,17 @@ function initGamePage() {
   document.querySelector("#markIncorrect").addEventListener("click", () => scoreClue(false));
   document.querySelector("#closeDialog").addEventListener("click", () => { closeClue(); startTurnTimer(); saveAndRender(); });
   const backToLobbyButton = document.querySelector("#backToLobby");
+  const endRoomButton = document.querySelector("#endRoom");
   if (backToLobbyButton) {
     backToLobbyButton.addEventListener("click", () => navigateTo("lobby.html"));
+  }
+  if (endRoomButton) {
+    endRoomButton.addEventListener("click", async () => {
+      await leaveRoomNow(state);
+      resetRoundState(state);
+      saveState(state);
+      navigateTo("setup.html");
+    });
   }
   window.addEventListener("keydown", (event) => {
     if (!clueDialog.open || !state.currentClueId) return;
