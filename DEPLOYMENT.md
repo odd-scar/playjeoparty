@@ -14,6 +14,7 @@ For live multiplayer, both must be publicly deployed.
 4. Set env var:
    - `ALLOWED_ORIGINS=https://your-frontend-domain.com`
    - Add multiple domains as comma-separated values.
+   - Optional (recommended): `CLUE_ADMIN_TOKEN=your-secret-token` to protect clue import/refill endpoints.
 5. After deploy, copy the backend URL (example: `https://jeoparty-api.onrender.com`).
 
 ## 2) Deploy frontend (Vercel or Netlify)
@@ -39,3 +40,38 @@ For live multiplayer, both must be publicly deployed.
 4. Confirm both users appear automatically.
 5. Press start on both devices.
 6. Verify board, scores, and used clues stay synced.
+
+## 5) Massive clue operations
+The backend now supports persistent clue expansion without redeploying frontend:
+
+- Check current clue counts:
+  - `GET https://your-api.onrender.com/api/clues/stats`
+
+- Bulk import clues (Phase 2):
+  - `POST /api/clues/import`
+  - Body example:
+    ```json
+    {
+      "replace": false,
+      "categories": {
+        "Math Matters": [
+          ["Euclid", "This ancient Greek mathematician wrote Elements."],
+          ["Prime number", "This integer is divisible only by 1 and itself."]
+        ]
+      }
+    }
+    ```
+  - If `CLUE_ADMIN_TOKEN` is set, include header:
+    - `X-Admin-Token: your-secret-token`
+
+- Refill clues locally at zero API cost (Phase 3 default):
+  - `POST /api/clues/refill`
+  - Body example:
+    ```json
+    {
+      "categories": ["Math Matters", "Science Core"],
+      "perCategory": 300,
+      "mode": "ai"
+    }
+    ```
+  - Even with `"mode": "ai"`, server stays in cost-safe local refill unless you explicitly build paid AI integration later.

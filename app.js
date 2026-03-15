@@ -517,8 +517,19 @@ function createClueText(state, fact) {
   return fact;
 }
 
+function applyBoard(state, categories, sourceLabel = "local") {
+  state.categories = categories;
+  state.activePlayerIndex = 0;
+  state.currentClueId = "";
+  state.buzzedPlayerId = "";
+  state.answerRevealed = false;
+  state.clueOpenedAt = 0;
+  state.scoringLocked = false;
+  pushFeed(state, `New ${sourceLabel} board created with ${state.selectedCategoryNames.join(", ")}.`);
+}
+
 function buildBoard(state) {
-  state.categories = state.selectedCategoryNames.map((name) => ({
+  const categories = state.selectedCategoryNames.map((name) => ({
     name,
     clues: sampleEntries(name).map((entry, clueIndex) => ({
       id: entry.id,
@@ -529,13 +540,53 @@ function buildBoard(state) {
       used: false
     }))
   }));
-  state.activePlayerIndex = 0;
-  state.currentClueId = "";
-  state.buzzedPlayerId = "";
-  state.answerRevealed = false;
-  state.clueOpenedAt = 0;
-  state.scoringLocked = false;
-  pushFeed(state, `New board created with ${state.selectedCategoryNames.join(", ")}.`);
+  applyBoard(state, categories, "local");
+}
+
+async function buildBoardFromApi(state) {
+  if (!API_BASE || !state.selectedCategoryNames.length) {
+    return false;
+  }
+  const payload = await apiRequest("/api/clues/board", {
+    method: "POST",
+    body: JSON.stringify({
+      categories: state.selectedCategoryNames,
+      difficulty: state.difficulty
+    })
+  });
+  if (!payload?.ok || !Array.isArray(payload.categories) || !payload.categories.length) {
+    return false;
+  }
+  const categories = payload.categories.map((category) => ({
+    name: category.name,
+    clues: (Array.isArray(category.clues) ? category.clues : []).map((clue, clueIndex) => ({
+      id: String(clue.id || `${slugify(category.name)}-${clueIndex}`),
+      category: category.name,
+      value: Number(clue.value) || VALUES[clueIndex] || 100,
+      answer: clue.answer || "Unknown",
+      clue: createClueText(state, clue.clue || ""),
+      used: false
+    }))
+  })).filter((category) => category.clues.length === VALUES.length);
+  if (!categories.length) {
+    return false;
+  }
+  applyBoard(state, categories, payload.source || "database");
+  return true;
+}
+
+async function buildBoardSmart(state, options = {}) {
+  const preferApi = Boolean(options.preferApi);
+  if (preferApi) {
+    try {
+      const ok = await buildBoardFromApi(state);
+      if (ok) {
+        return "api";
+      }
+    } catch {}
+  }
+  buildBoard(state);
+  return "local";
 }
 function remainingCount(state) {
   return state.categories.reduce((sum, category) => sum + category.clues.filter((clue) => !clue.used).length, 0);
@@ -1037,7 +1088,7 @@ function initLobbyPage() {
       }
       return;
     }
-    buildBoard(state);
+    await buildBoardSmart(state, { preferApi: false });
     saveState(state);
     const encoded = encodeURIComponent(JSON.stringify({ ...state, live: undefined }));
     const url = `${window.location.origin}${window.location.pathname.replace("lobby.html", "game.html")}#room=${encoded}`;
@@ -1056,7 +1107,7 @@ function initLobbyPage() {
         return;
       }
     }
-    buildBoard(state);
+    const boardSource = await buildBoardSmart(state, { preferApi: true });
     try {
       const payload = await apiRequest("/api/rooms/create", {
         method: "POST",
@@ -1065,7 +1116,9 @@ function initLobbyPage() {
       applyRoomPayload(state, payload);
       saveState(state);
       liveRoomCodeInput.value = payload.roomCode;
-      liveStatus.textContent = `Room ${payload.roomCode} is open.`;
+      liveStatus.textContent = boardSource === "api"
+        ? `Room ${payload.roomCode} is open with a fresh DB board.`
+        : `Room ${payload.roomCode} is open. Using local board fallback.`;
       refreshShareUi();
       renderMembers();
       if (!pollId) {
@@ -1130,13 +1183,13 @@ function initLobbyPage() {
       navigateTo("game.html");
     }
   });
-  offlineStartButton.addEventListener("click", () => {
+  offlineStartButton.addEventListener("click", async () => {
     if (state.selectedCategoryNames.length !== MAX_ACTIVE_CATEGORIES) {
       navigateTo("setup.html");
       return;
     }
     buildPlayersFromInputs(state, playerInputs);
-    buildBoard(state);
+    await buildBoardSmart(state, { preferApi: state.mode === "online" });
     saveState(state);
     navigateTo("game.html");
   });
@@ -1150,7 +1203,7 @@ function initLobbyPage() {
   refreshShareUi();
 }
 
-function initGamePage() {
+async function initGamePage() {
   const state = loadState();
   if (!state.categories.length) {
     const hash = window.location.hash;
@@ -1162,7 +1215,7 @@ function initGamePage() {
     }
   }
   if (!state.categories.length && state.selectedCategoryNames.length) {
-    buildBoard(state);
+    await buildBoardSmart(state, { preferApi: state.mode === "online" });
     saveState(state);
   }
   if (!state.categories.length) {
@@ -1510,8 +1563,8 @@ function initGamePage() {
   }
 
   document.querySelector("#nextTurn").addEventListener("click", rotateTurn);
-  document.querySelector("#newRound").addEventListener("click", () => {
-    buildBoard(state);
+  document.querySelector("#newRound").addEventListener("click", async () => {
+    await buildBoardSmart(state, { preferApi: state.mode === "online" });
     if (state.mode === "online") {
       syncPlayersFromMembers(state);
     }

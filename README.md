@@ -20,6 +20,16 @@ Jeopardy-style party game with two play modes: `Online room` and `All-play party
 3. Pick categories, create a board, and click `Create live room`.
 4. Share the room code with friends so they can join from their own devices.
 
+## Clue API (Phase 1/2/3)
+The backend now includes a persistent SQLite clue store (`clues.db`) and board generation API:
+- `POST /api/clues/board` -> returns a fresh 5x5 board from DB clues.
+- `POST /api/clues/import` -> bulk import clues (`items` or `categories` payload).
+- `POST /api/clues/refill` -> cost-safe local refill to expand clue inventory.
+- `GET /api/clues/stats` -> total clues + per-category counts.
+
+By default, refill is local/template-based (no paid AI calls).  
+If you set `CLUE_ADMIN_TOKEN`, include header `X-Admin-Token` for import/refill endpoints.
+
 ## Notes
 - Room state is stored in memory, so restarting the server clears rooms.
 - Snapshot links still work for one-off sharing, but room codes are the true live sync mode.
