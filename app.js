@@ -320,7 +320,10 @@ const PLAYER_COLORS = ["#ffcb52", "#4ce0b3", "#ff6fb5", "#4da0ff"];
 const CLUE_TIMER_MS = 18000;
 const POLL_MS = 1500;
 const API_BASE = (window.JEOPARTY_CONFIG?.apiBase || "").replace(/\/$/, "");
+const FIXED_ROOM_TITLE = "Trivia Night - JeoParty";
 const CLUE_HISTORY_KEY = "jeoparty-clue-history";
+const DB_CLUE_HISTORY_KEY = "jeoparty-db-clue-history";
+const DB_CLUE_HISTORY_MAX = 1000;
 const CATEGORY_POOL_SIZE = 1000;
 const CLUE_TEMPLATES = [
   "{fact}",
@@ -350,7 +353,7 @@ let isInternalNavigation = false;
 
 const defaultState = {
   mode: "online",
-  roomName: "Friday Trivia Night",
+  roomName: FIXED_ROOM_TITLE,
   displayName: "Player",
   hostVibe: "classic",
   difficulty: "balanced",
@@ -366,6 +369,9 @@ const defaultState = {
   activePlayerIndex: 0,
   currentClueId: "",
   buzzedPlayerId: "",
+  buzzQueue: [],
+  activeAttemptIndex: -1,
+  judgeVotes: {},
   answerRevealed: false,
   clueOpenedAt: 0,
   scoringLocked: false,
@@ -397,6 +403,16 @@ function loadState() {
     if (!["online", "allplay"].includes(loaded.mode)) {
       loaded.mode = "online";
     }
+    loaded.roomName = FIXED_ROOM_TITLE;
+    if (!Array.isArray(loaded.buzzQueue)) {
+      loaded.buzzQueue = [];
+    }
+    if (typeof loaded.activeAttemptIndex !== "number") {
+      loaded.activeAttemptIndex = -1;
+    }
+    if (!loaded.judgeVotes || typeof loaded.judgeVotes !== "object") {
+      loaded.judgeVotes = {};
+    }
     return loaded;
   } catch {
     return structuredClone(defaultState);
@@ -422,6 +438,19 @@ function loadClueHistory() {
 
 function saveClueHistory(history) {
   localStorage.setItem(CLUE_HISTORY_KEY, JSON.stringify(history));
+}
+
+function loadDbClueHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DB_CLUE_HISTORY_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDbClueHistory(history) {
+  localStorage.setItem(DB_CLUE_HISTORY_KEY, JSON.stringify(history));
 }
 
 function expandedCategoryPool(name) {
@@ -547,15 +576,37 @@ async function buildBoardFromApi(state) {
   if (!API_BASE || !state.selectedCategoryNames.length) {
     return false;
   }
+  const dbHistory = loadDbClueHistory();
+  const excludeIds = {};
+  for (const name of state.selectedCategoryNames) {
+    const ids = Array.isArray(dbHistory[name]) ? dbHistory[name] : [];
+    if (ids.length) {
+      excludeIds[name] = ids;
+    }
+  }
+  const requestBody = {
+    categories: state.selectedCategoryNames,
+    difficulty: state.difficulty
+  };
+  if (Object.keys(excludeIds).length) {
+    requestBody.excludeIds = excludeIds;
+  }
   const payload = await apiRequest("/api/clues/board", {
     method: "POST",
-    body: JSON.stringify({
-      categories: state.selectedCategoryNames,
-      difficulty: state.difficulty
-    })
+    body: JSON.stringify(requestBody)
   });
   if (!payload?.ok || !Array.isArray(payload.categories) || !payload.categories.length) {
     return false;
+  }
+  if (payload.usedIds && typeof payload.usedIds === "object") {
+    for (const [category, ids] of Object.entries(payload.usedIds)) {
+      const existing = new Set(Array.isArray(dbHistory[category]) ? dbHistory[category] : []);
+      for (const id of (Array.isArray(ids) ? ids : [])) {
+        existing.add(String(id));
+      }
+      dbHistory[category] = Array.from(existing).slice(-DB_CLUE_HISTORY_MAX);
+    }
+    saveDbClueHistory(dbHistory);
   }
   const categories = payload.categories.map((category) => ({
     name: category.name,
@@ -609,6 +660,68 @@ function getCurrentClue(state) {
     }
   }
   return null;
+}
+
+function requiredBuzzers(state) {
+  return state.players.length <= 2 ? 1 : 2;
+}
+
+function getJudgeIds(state) {
+  const buzzers = new Set(Array.isArray(state.buzzQueue) ? state.buzzQueue : []);
+  return state.players.map((player) => player.id).filter((id) => !buzzers.has(id));
+}
+
+function getCurrentAttemptPlayerId(state) {
+  if (!Array.isArray(state.buzzQueue)) {
+    return "";
+  }
+  if (typeof state.activeAttemptIndex !== "number" || state.activeAttemptIndex < 0) {
+    return "";
+  }
+  return state.buzzQueue[state.activeAttemptIndex] || "";
+}
+
+function getCurrentAttemptPlayer(state) {
+  const attemptPlayerId = getCurrentAttemptPlayerId(state);
+  if (!attemptPlayerId) {
+    return null;
+  }
+  return state.players.find((player) => player.id === attemptPlayerId) || null;
+}
+
+function isJudgingPhase(state) {
+  return state.buzzQueue.length >= requiredBuzzers(state) && Boolean(getCurrentAttemptPlayerId(state));
+}
+
+function normalizeRoundFlowState(state) {
+  const validPlayerIds = new Set(state.players.map((player) => player.id));
+  const uniqueQueue = [];
+  for (const playerId of Array.isArray(state.buzzQueue) ? state.buzzQueue : []) {
+    if (!validPlayerIds.has(playerId) || uniqueQueue.includes(playerId)) {
+      continue;
+    }
+    uniqueQueue.push(playerId);
+  }
+  state.buzzQueue = uniqueQueue.slice(0, requiredBuzzers(state));
+  if (state.buzzedPlayerId && !validPlayerIds.has(state.buzzedPlayerId)) {
+    state.buzzedPlayerId = "";
+  }
+  if (state.buzzQueue.length < requiredBuzzers(state)) {
+    state.activeAttemptIndex = -1;
+  } else if (typeof state.activeAttemptIndex !== "number") {
+    state.activeAttemptIndex = 0;
+  } else {
+    state.activeAttemptIndex = Math.min(Math.max(state.activeAttemptIndex, 0), state.buzzQueue.length - 1);
+  }
+  const validJudgeIds = new Set(getJudgeIds(state));
+  const votes = state.judgeVotes && typeof state.judgeVotes === "object" ? state.judgeVotes : {};
+  const nextVotes = {};
+  for (const [judgeId, vote] of Object.entries(votes)) {
+    if (validJudgeIds.has(judgeId) && (vote === "correct" || vote === "incorrect")) {
+      nextVotes[judgeId] = vote;
+    }
+  }
+  state.judgeVotes = nextVotes;
 }
 
 async function apiRequest(path, options = {}) {
@@ -693,10 +806,14 @@ function resetScoresOnly(state) {
 }
 
 function resetRoundState(state) {
+  state.roomName = FIXED_ROOM_TITLE;
   clearLiveRoomState(state);
   state.categories = [];
   state.currentClueId = "";
   state.buzzedPlayerId = "";
+  state.buzzQueue = [];
+  state.activeAttemptIndex = -1;
+  state.judgeVotes = {};
   state.answerRevealed = false;
   state.clueOpenedAt = 0;
   state.scoringLocked = false;
@@ -800,6 +917,7 @@ function applyRoomPayload(state, payload) {
   const localClientId = state.live.clientId;
   const localJoinedAt = state.live.joinedAt;
   Object.assign(state, payload.state || {});
+  state.roomName = FIXED_ROOM_TITLE;
   state.displayName = localDisplayName;
   state.live = {
     ...state.live,
@@ -812,12 +930,14 @@ function applyRoomPayload(state, payload) {
     clientId: localClientId,
     joinedAt: localJoinedAt
   };
+  normalizeRoundFlowState(state);
 }
 
 function syncPlayersFromMembers(state) {
   if (state.mode === "online" && state.live.members.length) {
     state.players = buildPlayersFromMembers(state, state.live.members);
     state.activePlayerIndex = Math.min(state.activePlayerIndex, Math.max(0, state.players.length - 1));
+    normalizeRoundFlowState(state);
   }
 }
 
@@ -850,6 +970,7 @@ function initWelcomePage() {
 
 function initSetupPage() {
   const state = loadState();
+  state.roomName = FIXED_ROOM_TITLE;
   document.querySelector("#setupModePill").textContent = modeLabel(state.mode);
   document.querySelector("#setupTitle").textContent = state.mode === "online" ? "Pick categories for the room" : "Pick categories and keep it moving";
   document.querySelector("#setupCopy").textContent = state.mode === "online"
@@ -863,7 +984,8 @@ function initSetupPage() {
   const speechToggle = document.querySelector("#speechToggle");
   const setupMessage = document.querySelector("#setupMessage");
 
-  roomNameInput.value = state.roomName;
+  roomNameInput.value = FIXED_ROOM_TITLE;
+  roomNameInput.readOnly = true;
   hostVibeSelect.value = state.hostVibe;
   difficultySelect.value = state.difficulty;
   turnDurationSelect.value = String(state.turnDuration || 30);
@@ -871,7 +993,6 @@ function initSetupPage() {
 
   renderCategoryPicker(document.querySelector("#categoryPicker"), state, setupMessage);
 
-  roomNameInput.addEventListener("input", () => { state.roomName = roomNameInput.value.trim() || defaultState.roomName; saveState(state); });
   hostVibeSelect.addEventListener("change", () => { state.hostVibe = hostVibeSelect.value; saveState(state); });
   difficultySelect.addEventListener("change", () => { state.difficulty = difficultySelect.value; saveState(state); });
   turnDurationSelect.addEventListener("change", () => { state.turnDuration = Number(turnDurationSelect.value) || 30; saveState(state); });
@@ -1226,6 +1347,7 @@ async function initGamePage() {
   if (!state.players.length) {
     state.players = structuredClone(defaultState.players);
   }
+  normalizeRoundFlowState(state);
 
   const scoreboard = document.querySelector("#scoreboard");
   const boardGrid = document.querySelector("#boardGrid");
@@ -1258,6 +1380,10 @@ async function initGamePage() {
     return state.players[state.activePlayerIndex] || { name: "Player" };
   }
 
+  function localPlayerId() {
+    return state.mode === "online" ? state.live.clientId : "local-judge";
+  }
+
   async function pushLiveState() {
     if (!state.live.enabled || !state.live.roomCode) {
       return;
@@ -1268,6 +1394,9 @@ async function initGamePage() {
       activePlayerIndex: state.activePlayerIndex,
       currentClueId: state.currentClueId,
       buzzedPlayerId: state.buzzedPlayerId,
+      buzzQueue: state.buzzQueue,
+      activeAttemptIndex: state.activeAttemptIndex,
+      judgeVotes: state.judgeVotes,
       answerRevealed: state.answerRevealed,
       clueOpenedAt: state.clueOpenedAt,
       scoringLocked: state.scoringLocked,
@@ -1290,6 +1419,7 @@ async function initGamePage() {
   }
 
   function saveAndRender(push = true, previousClueId = syncedClueId) {
+    normalizeRoundFlowState(state);
     saveState(state);
     render(previousClueId);
     if (push) {
@@ -1309,7 +1439,7 @@ async function initGamePage() {
       if (index === state.activePlayerIndex) {
         card.classList.add("active");
       }
-      if (state.buzzedPlayerId === player.id) {
+      if (state.buzzedPlayerId === player.id || state.buzzQueue.includes(player.id)) {
         card.classList.add("buzzed");
       }
       card.style.boxShadow = `inset 0 0 0 1px ${player.color}33`;
@@ -1343,26 +1473,63 @@ async function initGamePage() {
     });
   }
 
+  function canBuzzPlayer(playerId) {
+    if (!state.currentClueId || state.scoringLocked || state.answerRevealed) {
+      return false;
+    }
+    if (state.buzzQueue.includes(playerId)) {
+      return false;
+    }
+    if (state.buzzQueue.length >= requiredBuzzers(state)) {
+      return false;
+    }
+    if (state.mode === "online" && playerId !== state.live.clientId) {
+      return false;
+    }
+    return true;
+  }
+
+  function registerBuzz(playerId) {
+    if (!canBuzzPlayer(playerId)) {
+      return;
+    }
+    state.buzzQueue.push(playerId);
+    state.buzzedPlayerId = state.buzzQueue[0] || "";
+    normalizeRoundFlowState(state);
+    if (state.buzzQueue.length >= requiredBuzzers(state)) {
+      state.activeAttemptIndex = 0;
+      state.judgeVotes = {};
+      const attemptPlayer = getCurrentAttemptPlayer(state);
+      if (attemptPlayer) {
+        state.buzzedPlayerId = attemptPlayer.id;
+        setHostLine(`${attemptPlayer.name} is answering. Judges decide the vote.`);
+      }
+    } else {
+      const needed = requiredBuzzers(state) - state.buzzQueue.length;
+      setHostLine(`Waiting for ${needed} more buzzer${needed === 1 ? "" : "s"} before judging starts.`);
+    }
+    saveAndRender();
+  }
+
   function renderBuzzers() {
     buzzGrid.innerHTML = "";
     state.players.forEach((player) => {
+      const queueIndex = state.buzzQueue.indexOf(player.id);
+      const canBuzz = canBuzzPlayer(player.id);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "buzz-button";
-      if (state.buzzedPlayerId === player.id) {
+      if (queueIndex !== -1) {
         button.classList.add("selected");
       }
-      button.innerHTML = `<strong>${player.name}</strong><br><span>Press ${player.buzzKey} or click to buzz</span>`;
-      button.addEventListener("click", () => {
-        if (state.scoringLocked || state.answerRevealed) {
-          return;
-        }
-        state.buzzedPlayerId = player.id;
-        buzzStatus.textContent = `${player.name} buzzed in first.`;
-        markCorrectButton.disabled = false;
-        markIncorrectButton.disabled = false;
-        saveAndRender();
-      });
+      const helper = queueIndex !== -1
+        ? `Locked as #${queueIndex + 1}`
+        : (state.mode === "online" && player.id !== state.live.clientId)
+          ? "Controlled on their own device"
+          : `Press ${player.buzzKey} or click to buzz`;
+      button.innerHTML = `<strong>${player.name}</strong><br><span>${helper}</span>`;
+      button.disabled = !canBuzz;
+      button.addEventListener("click", () => registerBuzz(player.id));
       buzzGrid.append(button);
     });
   }
@@ -1382,21 +1549,55 @@ async function initGamePage() {
     dialogCategory.textContent = "Clue";
     dialogValue.textContent = `$${clue.value}`;
     dialogClue.textContent = clue.clue;
-    dialogAnswer.hidden = !state.answerRevealed;
-    dialogAnswer.textContent = state.answerRevealed ? `Answer: ${clue.answer}` : "";
-    const buzzedPlayer = state.players.find((player) => player.id === state.buzzedPlayerId);
+    const attemptPlayer = getCurrentAttemptPlayer(state);
+    const isOnlineMode = state.mode === "online";
+    const judgeIds = getJudgeIds(state);
+    const localIsJudge = isOnlineMode ? judgeIds.includes(localPlayerId()) : true;
+    const localVoteKey = isOnlineMode ? localPlayerId() : "local-judge";
+    const canVote = Boolean(attemptPlayer)
+      && !state.scoringLocked
+      && !state.answerRevealed
+      && localIsJudge
+      && !state.judgeVotes[localVoteKey];
+    const votesNeeded = isOnlineMode ? judgeIds.length : 1;
+    const votesReceived = isOnlineMode
+      ? judgeIds.filter((judgeId) => Boolean(state.judgeVotes[judgeId])).length
+      : (state.judgeVotes["local-judge"] ? 1 : 0);
+    const canSeeJudgeAnswer = state.answerRevealed || (Boolean(attemptPlayer) && localIsJudge);
+    dialogAnswer.hidden = !canSeeJudgeAnswer;
+    dialogAnswer.textContent = canSeeJudgeAnswer
+      ? `${state.answerRevealed ? "Answer" : "Judge view answer"}: ${clue.answer}`
+      : "";
+    markCorrectButton.textContent = "Vote correct";
+    markIncorrectButton.textContent = "Vote incorrect";
     if (state.scoringLocked) {
       buzzStatus.textContent = "Answer was revealed early. No points can be awarded for this clue.";
       markCorrectButton.disabled = true;
       markIncorrectButton.disabled = true;
-    } else if (state.answerRevealed && !buzzedPlayer) {
+    } else if (!state.buzzQueue.length) {
+      buzzStatus.textContent = requiredBuzzers(state) === 1
+        ? "First buzz locks the only attempt in this 1v1 clue."
+        : "Need the first two buzzers before judging begins.";
+      markCorrectButton.disabled = true;
+      markIncorrectButton.disabled = true;
+    } else if (state.buzzQueue.length < requiredBuzzers(state)) {
+      buzzStatus.textContent = "First buzzer locked. Waiting for the second buzzer.";
+      markCorrectButton.disabled = true;
+      markIncorrectButton.disabled = true;
+    } else if (state.answerRevealed && !attemptPlayer) {
       buzzStatus.textContent = "Answer is revealed. Rotate turn to continue.";
       markCorrectButton.disabled = true;
       markIncorrectButton.disabled = true;
-    } else if (buzzedPlayer) {
-      buzzStatus.textContent = `${buzzedPlayer.name} buzzed in first.`;
-      markCorrectButton.disabled = false;
-      markIncorrectButton.disabled = false;
+    } else if (attemptPlayer) {
+      if (isOnlineMode && attemptPlayer.id === localPlayerId()) {
+        buzzStatus.textContent = `You're answering. Say your guess now. Judges vote (${votesReceived}/${votesNeeded}).`;
+      } else if (localIsJudge) {
+        buzzStatus.textContent = `Judge vote for ${attemptPlayer.name}: ${votesReceived}/${votesNeeded} submitted.`;
+      } else {
+        buzzStatus.textContent = `Waiting on judge votes for ${attemptPlayer.name}: ${votesReceived}/${votesNeeded}.`;
+      }
+      markCorrectButton.disabled = !canVote;
+      markIncorrectButton.disabled = !canVote;
     } else {
       buzzStatus.textContent = "Buzz in with the buttons below or by pressing number keys.";
       markCorrectButton.disabled = true;
@@ -1422,40 +1623,107 @@ async function initGamePage() {
     const previousClueId = state.currentClueId;
     state.currentClueId = clue.id;
     state.buzzedPlayerId = "";
+    state.buzzQueue = [];
+    state.activeAttemptIndex = -1;
+    state.judgeVotes = {};
     state.answerRevealed = false;
     state.scoringLocked = false;
     state.clueOpenedAt = Date.now();
-    setHostLine(`${clue.category} for $${clue.value}. ${activePlayer().name}, you control the board.`);
+    setHostLine(`${clue.category} for $${clue.value}. Lock in the buzzers and judge the answer.`);
     saveAndRender(true, previousClueId);
   }
 
   function closeClue() {
     state.currentClueId = "";
     state.buzzedPlayerId = "";
+    state.buzzQueue = [];
+    state.activeAttemptIndex = -1;
+    state.judgeVotes = {};
     state.answerRevealed = false;
     state.clueOpenedAt = 0;
     state.scoringLocked = false;
     stopClueTimer();
   }
 
-  function scoreClue(correct) {
+  function resolveVotesIfReady() {
     const clue = getCurrentClue(state);
-    if (!clue || !state.buzzedPlayerId || state.scoringLocked) {
-      return;
+    const attemptPlayer = getCurrentAttemptPlayer(state);
+    if (!clue || !attemptPlayer || state.scoringLocked) {
+      return false;
     }
-    const player = state.players.find((item) => item.id === state.buzzedPlayerId);
-    player.score += correct ? clue.value : -clue.value;
+    const judgeIds = state.mode === "online" ? getJudgeIds(state) : ["local-judge"];
+    if (!judgeIds.length) {
+      clue.used = true;
+      pushFeed(state, `No judges were available for ${clue.category} at $${clue.value}.`);
+      pushFeed(state, `Official answer: ${clue.answer}`);
+      setHostLine("No judges available. Clue closed with no points.");
+      closeClue();
+      startTurnTimer();
+      return true;
+    }
+    const allVotesIn = judgeIds.every((judgeId) => state.judgeVotes[judgeId] === "correct" || state.judgeVotes[judgeId] === "incorrect");
+    if (!allVotesIn) {
+      return false;
+    }
+    let correctVotes = 0;
+    let incorrectVotes = 0;
+    judgeIds.forEach((judgeId) => {
+      if (state.judgeVotes[judgeId] === "correct") {
+        correctVotes += 1;
+      } else {
+        incorrectVotes += 1;
+      }
+    });
+    if (correctVotes > incorrectVotes) {
+      attemptPlayer.score += clue.value;
+      clue.used = true;
+      state.activePlayerIndex = state.players.findIndex((player) => player.id === attemptPlayer.id);
+      pushFeed(state, `${attemptPlayer.name} won ${clue.category} for $${clue.value}.`);
+      pushFeed(state, `Official answer: ${clue.answer}`);
+      setHostLine(`${attemptPlayer.name} got it. Board control rotates to them.`);
+      closeClue();
+      startTurnTimer();
+      return true;
+    }
+    pushFeed(state, `${attemptPlayer.name} was voted incorrect on ${clue.category}.`);
+    const hasSecondAttempt = state.activeAttemptIndex + 1 < state.buzzQueue.length;
+    if (hasSecondAttempt) {
+      state.activeAttemptIndex += 1;
+      state.judgeVotes = {};
+      const nextAttemptPlayer = getCurrentAttemptPlayer(state);
+      state.buzzedPlayerId = nextAttemptPlayer?.id || "";
+      if (nextAttemptPlayer) {
+        setHostLine(`${nextAttemptPlayer.name} now gets the second and final attempt.`);
+      }
+      return true;
+    }
     clue.used = true;
-    if (correct) {
-      state.activePlayerIndex = state.players.findIndex((item) => item.id === player.id);
-      pushFeed(state, `${player.name} got ${clue.category} for $${clue.value} correct.`);
-      setHostLine(`${player.name} takes the lead on board control.`);
-    } else {
-      pushFeed(state, `${player.name} missed ${clue.category} for $${clue.value}.`);
-      setHostLine(`${player.name} dropped $${clue.value} points.`);
-    }
+    pushFeed(state, `No one got ${clue.category} for $${clue.value}.`);
+    pushFeed(state, `Official answer: ${clue.answer}`);
+    setHostLine("Clue closed with no points awarded.");
     closeClue();
     startTurnTimer();
+    return true;
+  }
+
+  function voteAttempt(correct) {
+    const clue = getCurrentClue(state);
+    const attemptPlayer = getCurrentAttemptPlayer(state);
+    if (!clue || !attemptPlayer || state.scoringLocked || state.answerRevealed) {
+      return;
+    }
+    const vote = correct ? "correct" : "incorrect";
+    if (state.mode === "online") {
+      const localId = localPlayerId();
+      const judgeIds = getJudgeIds(state);
+      if (!judgeIds.includes(localId) || state.judgeVotes[localId]) {
+        return;
+      }
+      state.judgeVotes[localId] = vote;
+    } else {
+      state.judgeVotes = { "local-judge": vote };
+    }
+    resolveVotesIfReady();
     saveAndRender();
   }
 
@@ -1534,15 +1802,15 @@ async function initGamePage() {
   }
 
   function render(previousClueId = syncedClueId) {
-    roomTitle.textContent = state.roomName;
+    roomTitle.textContent = FIXED_ROOM_TITLE;
     modePill.textContent = modeLabel(state.mode);
     difficultyPill.textContent = difficultyLabel(state.difficulty);
     remainingPill.textContent = `${remainingCount(state)} clues left`;
     syncPill.textContent = state.live.enabled ? `Live room ${state.live.roomCode}` : "Local only";
     syncPill.classList.toggle("live", state.live.enabled);
     buzzerCopy.innerHTML = state.mode === "allplay"
-      ? "Everyone can participate without a host. Use the buzzers only if your group still wants first-in scoring."
-      : "During a clue, press keys <strong>1</strong>, <strong>2</strong>, <strong>3</strong>, or <strong>4</strong> to lock in a player fast.";
+      ? "First and second buzzers lock the only attempts. Non-buzzers vote on who got it right."
+      : "Top two buzzers are locked per clue (1 buzzer in 1v1). Non-buzzers privately judge and vote.";
     renderScoreboard();
     renderBoard();
     syncClueDialog(previousClueId);
@@ -1579,13 +1847,16 @@ async function initGamePage() {
     if (revealedEarly) {
       state.scoringLocked = true;
       state.buzzedPlayerId = "";
+      state.buzzQueue = [];
+      state.activeAttemptIndex = -1;
+      state.judgeVotes = {};
       pushFeed(state, "Answer revealed early. Clue locked at zero points.");
       setHostLine("Answer was revealed before time expired. This clue is now zero points.");
     }
     saveAndRender();
   });
-  document.querySelector("#markCorrect").addEventListener("click", () => scoreClue(true));
-  document.querySelector("#markIncorrect").addEventListener("click", () => scoreClue(false));
+  document.querySelector("#markCorrect").addEventListener("click", () => voteAttempt(true));
+  document.querySelector("#markIncorrect").addEventListener("click", () => voteAttempt(false));
   document.querySelector("#closeDialog").addEventListener("click", () => { closeClue(); startTurnTimer(); saveAndRender(); });
   const backToLobbyButton = document.querySelector("#backToLobby");
   const endRoomButton = document.querySelector("#endRoom");
@@ -1594,6 +1865,9 @@ async function initGamePage() {
       resetScoresOnly(state);
       state.currentClueId = "";
       state.buzzedPlayerId = "";
+      state.buzzQueue = [];
+      state.activeAttemptIndex = -1;
+      state.judgeVotes = {};
       state.answerRevealed = false;
       state.clueOpenedAt = 0;
       state.scoringLocked = false;
@@ -1617,11 +1891,7 @@ async function initGamePage() {
     if (state.scoringLocked || state.answerRevealed) return;
     const player = state.players.find((item) => item.buzzKey === event.key);
     if (player) {
-      state.buzzedPlayerId = player.id;
-      buzzStatus.textContent = `${player.name} buzzed in first.`;
-      markCorrectButton.disabled = false;
-      markIncorrectButton.disabled = false;
-      saveAndRender();
+      registerBuzz(player.id);
     }
   });
 
